@@ -9,6 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from fastapi import FastAPI, Request
 from dotenv import load_dotenv
 
+# بارگذاری متغیرها از .env
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -22,6 +23,7 @@ app = FastAPI()
 
 FILES_PATH = "files.json"
 
+# اگر فایل لیست نبود بسازه
 if not os.path.exists(FILES_PATH):
     with open(FILES_PATH, "w") as f:
         json.dump([], f)
@@ -29,6 +31,7 @@ if not os.path.exists(FILES_PATH):
 class UploadStates(StatesGroup):
     waiting_for_file = State()
 
+# توابع کمکی
 def load_files():
     with open(FILES_PATH, "r") as f:
         return json.load(f)
@@ -46,10 +49,7 @@ async def check_membership(user_id):
 
 @dp.message(CommandStart())
 async def start_handler(message: types.Message, state: FSMContext):
-    text = message.text
-    parts = text.split()
-    args = parts[1] if len(parts) > 1 else None
-
+    args = message.get_args()
     if message.from_user.id == ADMIN_ID and not args:
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -96,7 +96,22 @@ async def handle_file_request(message, state, from_callback=False):
 
 @dp.callback_query(lambda c: c.data == 'check_membership')
 async def check_membership_button(callback_query: types.CallbackQuery, state: FSMContext):
-    await handle_file_request(callback_query.message, state, from_callback=True)
+    user_id = callback_query.from_user.id
+    is_member = await check_membership(user_id)
+
+    if is_member:
+        await handle_file_request(callback_query.message, state, from_callback=True)
+    else:
+        join_keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.lstrip('@')}")],
+                [InlineKeyboardButton(text="بررسی عضویت", callback_data="check_membership")]
+            ]
+        )
+        await callback_query.message.edit_text(
+            "❌ شما هنوز عضو کانال نشدید.\n\nلطفاً ابتدا عضو شوید و سپس دوباره دکمه «بررسی عضویت» را بزنید.",
+            reply_markup=join_keyboard
+        )
     await callback_query.answer()
 
 @dp.callback_query(lambda c: c.data == "send_file")
@@ -160,21 +175,25 @@ async def handle_uploaded_file(message: types.Message, state: FSMContext):
     await message.answer(f"فایل آپلود شد!\n\nلینک فایل:\n{link}")
     await state.clear()
 
-@app.on_event("startup")
-async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
-
+# FastAPI webhook
 @app.post("/")
 async def webhook(req: Request):
-    if req.method != "POST":
-        return {"ok": False}
-
     data = await req.json()
     try:
         update = types.Update(**data)
+    except Exception as e:
+        print(f"خطا در خواندن آپدیت: {e}")
+        print(data)
+        return {"ok": False}
+
+    try:
         await dp.feed_update(bot, update)
     except Exception as e:
         print(f"خطا در پردازش آپدیت: {e}")
-        print(data)
-        return {"ok": False}
+        print(update)
     return {"ok": True}
+
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
+
+asyncio.get_event_loop().create_task(on_startup())
