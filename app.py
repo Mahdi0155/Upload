@@ -15,7 +15,16 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+
+# ساختن آدرس Webhook
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+if not WEBHOOK_URL:
+    if RENDER_EXTERNAL_URL:
+        WEBHOOK_URL = f"{RENDER_EXTERNAL_URL}/"
+    else:
+        raise ValueError("WEBHOOK_URL or RENDER_EXTERNAL_URL is not set!")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -174,7 +183,7 @@ async def webhook(req: Request):
     await dp.feed_update(bot, update)
     return {"ok": True}
 
-async def on_startup():
+# ست کردن وبهوک در شروع
+@app.on_event("startup")
+async def startup_event():
     await bot.set_webhook(WEBHOOK_URL)
-
-asyncio.get_event_loop().create_task(on_startup())
