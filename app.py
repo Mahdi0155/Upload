@@ -2,14 +2,13 @@ import os
 import json
 import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from fastapi import FastAPI, Request
 from dotenv import load_dotenv
 
-# بارگذاری متغیرها از .env
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -23,7 +22,6 @@ app = FastAPI()
 
 FILES_PATH = "files.json"
 
-# اگر فایل لیست نبود بسازه
 if not os.path.exists(FILES_PATH):
     with open(FILES_PATH, "w") as f:
         json.dump([], f)
@@ -31,7 +29,6 @@ if not os.path.exists(FILES_PATH):
 class UploadStates(StatesGroup):
     waiting_for_file = State()
 
-# توابع کمکی
 def load_files():
     with open(FILES_PATH, "r") as f:
         return json.load(f)
@@ -49,7 +46,10 @@ async def check_membership(user_id):
 
 @dp.message(CommandStart())
 async def start_handler(message: types.Message, state: FSMContext):
-    args = message.get_args()
+    text = message.text
+    parts = text.split()
+    args = parts[1] if len(parts) > 1 else None
+
     if message.from_user.id == ADMIN_ID and not args:
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -160,25 +160,21 @@ async def handle_uploaded_file(message: types.Message, state: FSMContext):
     await message.answer(f"فایل آپلود شد!\n\nلینک فایل:\n{link}")
     await state.clear()
 
-# FastAPI webhook
-@app.post("/")
-async def webhook(req: Request):
-    data = await req.json()
-    try:
-        update = types.Update(**data)
-    except Exception as e:
-        print(f"خطا در خواندن آپدیت: {e}")
-        print(data)
-        return {"ok": False}
-
-    try:
-        await dp.feed_update(bot, update)
-    except Exception as e:
-        print(f"خطا در پردازش آپدیت: {e}")
-        print(update)
-    return {"ok": True}
-
+@app.on_event("startup")
 async def on_startup():
     await bot.set_webhook(WEBHOOK_URL)
 
-asyncio.get_event_loop().create_task(on_startup())
+@app.post("/")
+async def webhook(req: Request):
+    if req.method != "POST":
+        return {"ok": False}
+
+    data = await req.json()
+    try:
+        update = types.Update(**data)
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        print(f"خطا در پردازش آپدیت: {e}")
+        print(data)
+        return {"ok": False}
+    return {"ok": True}
