@@ -9,26 +9,16 @@ from aiogram.fsm.state import State, StatesGroup
 from fastapi import FastAPI, Request
 from dotenv import load_dotenv
 
-# بارگزاری متغیرها از .env
+# بارگذاری متغیرها از .env
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
-
-# ساختن آدرس Webhook
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-
-if not WEBHOOK_URL:
-    if RENDER_EXTERNAL_URL:
-        WEBHOOK_URL = f"{RENDER_EXTERNAL_URL}/"
-    else:
-        raise ValueError("WEBHOOK_URL or RENDER_EXTERNAL_URL is not set!")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
 app = FastAPI()
 
 FILES_PATH = "files.json"
@@ -38,7 +28,6 @@ if not os.path.exists(FILES_PATH):
     with open(FILES_PATH, "w") as f:
         json.dump([], f)
 
-# استیت ماشین برای آپلود فایل
 class UploadStates(StatesGroup):
     waiting_for_file = State()
 
@@ -58,7 +47,6 @@ async def check_membership(user_id):
     except:
         return False
 
-# هندلر شروع
 @dp.message(CommandStart())
 async def start_handler(message: types.Message, state: FSMContext):
     args = message.get_args()
@@ -78,7 +66,6 @@ async def start_handler(message: types.Message, state: FSMContext):
     else:
         await message.answer("سلام! فایل خاصی درخواست نشده.")
 
-# چک عضویت و ارسال فایل
 async def handle_file_request(message, state, from_callback=False):
     user_id = message.from_user.id
     data = await state.get_data()
@@ -112,7 +99,6 @@ async def check_membership_button(callback_query: types.CallbackQuery, state: FS
     await handle_file_request(callback_query.message, state, from_callback=True)
     await callback_query.answer()
 
-# دکمه‌های پنل ادمین
 @dp.callback_query(lambda c: c.data == "send_file")
 async def send_file_button(callback_query: types.CallbackQuery, state: FSMContext):
     await callback_query.message.answer("لطفاً عکس یا ویدیوی خودت رو بفرست.")
@@ -148,7 +134,6 @@ async def get_link(callback_query: types.CallbackQuery):
     await callback_query.message.answer(f"لینک فایل:\n\n{link}")
     await callback_query.answer()
 
-# آپلود فایل توسط ادمین
 @dp.message(UploadStates.waiting_for_file)
 async def handle_uploaded_file(message: types.Message, state: FSMContext):
     if not (message.photo or message.video):
@@ -179,11 +164,21 @@ async def handle_uploaded_file(message: types.Message, state: FSMContext):
 @app.post("/")
 async def webhook(req: Request):
     data = await req.json()
-    update = types.Update(**data)
-    await dp.feed_update(bot, update)
+    try:
+        update = types.Update(**data)
+    except Exception as e:
+        print(f"خطا در خواندن آپدیت: {e}")
+        print(data)
+        return {"ok": False}
+
+    try:
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        print(f"خطا در پردازش آپدیت: {e}")
+        print(update)
     return {"ok": True}
 
-# ست کردن وبهوک در شروع
-@app.on_event("startup")
-async def startup_event():
+async def on_startup():
     await bot.set_webhook(WEBHOOK_URL)
+
+asyncio.get_event_loop().create_task(on_startup())
